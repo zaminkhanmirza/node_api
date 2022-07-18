@@ -2,14 +2,23 @@ require('dotenv').config();
 const sequelize = require('../../config/seq_database');
 const Registration = require('../../model/users');
 const Details = require('../../model/user.detail');
+const SubsriptionList = require('../../model/subscription.list');
+const UserSubscription = require('../../model/user.subscription');
 const nodemailer = require('nodemailer');
 const { genSaltSync, hashSync, compareSync } = require('bcrypt');
-const { sign } = require('jsonwebtoken');
+const { sign, verify, destroy } = require('jsonwebtoken');
 const jwt_decode = require('jwt-decode');
 const { Op } = require("sequelize");
+const date = require('date-and-time')
 
 Registration.hasMany(Details);
 Details.belongsTo(Registration);
+
+// SubsriptionList.hasMany(UserSubscription, { as: "usersubscriptions" });
+// UserSubscription.belongsTo(SubsriptionList, {
+//   foreignKey: "sub_id",
+//   as: "sub_id",
+// });
 
 sequelize.sync().then((result) => {
 }).catch((err) => {
@@ -198,7 +207,7 @@ module.exports = {
                     expiresIn: '24h',
                 });
                 return res.json({
-                    success: 1,
+                    success: 1, 
                     message: 'login successfully',
                     access_token: access_token,
                     refresh_token: refresh_token
@@ -212,14 +221,17 @@ module.exports = {
         });
     },
     logout: (req, res) => {
-        const body = req.body;
-        if (!body.token) {
+        let token = req.get("authorization");
+        token = token.slice(7);
+        // const body = req.body;
+        if (!token) {
             return res.json({
                 success: 0,
                 data: 'Token required!'
             });
         } else {
-            var decoded = jwt_destroy(body.token);
+            console.log(token);
+            destroy(token);
             return res.json({
                 success: 1,
                 data: 'User Logout Successfully!'
@@ -349,5 +361,214 @@ module.exports = {
                 refresh_token: refresh_token
             });
         })
+    },
+    
+    subscriptionList: (req, res) => {
+        SubsriptionList.findAll().then(subscription_list => {
+            // console.log(subscription_list);
+            if (subscription_list.length === 0) {
+                return res.json({
+                    success: 0,
+                    message: 'Record not found!'
+                });
+            } else {
+                return res.json({
+                    success: 1,
+                    data: subscription_list
+                });
+            }
+        }).catch(error => {
+            return res.json({
+                success: 0,
+                message: error
+            });
+        });
+    },
+    
+    
+    buySubscription: (req, res) => {
+        var date = new Date();
+        var expiry_date = new Date();
+        const body = req.body;
+        let token = req.get("authorization");
+        token = token.slice(7);
+        verify(token, process.env.JWT_KEY, (err, decoded) => {
+            if (err) {
+                return res.json({
+                    success: 0,
+                    message: err
+                });
+            } else {
+                Registration.findOne({
+                    where: {
+                        email: decoded.email,
+                    }
+                }).then(userData => {
+                    UserSubscription.findOne({
+                        where: {
+                            user_id: userData.id
+                        },
+                        order: [['id','DESC']],
+                    }).then(Subscription => {
+                        if (Subscription == null) {
+                            if (body.type == 0) {
+                                expiry_date = expiry_date.setDate(expiry_date.getDate() + 3);
+                                UserSubscription.create({
+                                    sub_id: 0,
+                                    user_id: userData.id,
+                                    type: 0,
+                                    starts_at: date,
+                                    expires_at: expiry_date,
+                                    user_price: 0,
+                                    payment_id: 'testing',
+                                    status: 1
+                                }).then((trial) => {
+                                    return res.json({
+                                        success: 1,
+                                        message: 'Subscription success!',
+                                        data: trial
+                                    });
+                                }).catch(error => {
+                                    console.log(error);
+                                });
+                            } else {
+                                SubsriptionList.findOne({
+                                    where: {
+                                        id: body.sub_id
+                                    }
+                                }).then(subsDetail => {
+                                    console.log(subsDetail);
+                                    let expiry = new Date();
+                                    if (body.sub_id == 1) {
+                                        expiry = expiry.setDate(expiry.getDate() + 365);
+                                    } else {
+                                        expiry = expiry.setDate(expiry.getDate() + 30);
+                                    }
+                                    UserSubscription.create({
+                                        sub_id: body.sub_id,
+                                        user_id: userData.id,
+                                        type: 1,
+                                        starts_at: date,
+                                        expires_at: expiry,
+                                        user_price: subsDetail.dataValues.price,
+                                        payment_id: 'testing',
+                                        status: 1
+                                    }).then((trial) => {
+                                        return res.json({
+                                            success: 1,
+                                            message: 'Subscription success!',
+                                            data: trial
+                                        });
+                                    }).catch(error => {
+                                        console.log(error);
+                                    });
+                                }).catch(error => {
+                                    console.log(error);
+                                    return res.json({
+                                        success: 0,
+                                        message: 'something went wrong!',
+                                        data: error
+                                    });
+                                });
+                            }
+                        } else {
+                            if (Subscription.dataValues.type == 0) {
+                                if (body.type == 0) {
+                                    return res.json({
+                                        success: 1,
+                                        success: 'You have already subscribed trial version',
+                                        data: Subscription
+                                    });
+                                } else {
+                                    let expiry_d = new Date();
+                                    let newPrice = 0;
+                                    if (body.sub_id == 1) {
+                                        expiry_d = expiry_d.setDate(expiry_d.getDate() + 365);
+                                        newPrice = 1499;
+                                    } else {
+                                        expiry_d = expiry_d.setDate(expiry_d.getDate() + 30);
+                                        newPrice = 150;
+                                    }
+                                    UserSubscription.create({
+                                        sub_id: body.sub_id,
+                                        user_id: userData.id,
+                                        type: 1,
+                                        starts_at: date,
+                                        expires_at: expiry_d,
+                                        user_price: newPrice,
+                                        payment_id: 'testing',
+                                        status: 1
+                                    }).then((trial) => {
+                                        return res.json({
+                                            success: 1,
+                                            message: 'Subscription success!',
+                                            data: trial
+                                        });
+                                    }).catch(error => {
+                                        console.log(error);
+                                    });
+                                } 
+                            } else {
+                                if (body.type == 0) {
+                                    return res.json({
+                                        success: 0,
+                                        message: 'You can not subscribe this plan now...',
+                                        data: Subscription
+                                    });
+                                } else {
+                                    let exp = new Date(Subscription.dataValues.expires_at);
+                                    if (exp >= date) {
+                                        return res.json({
+                                            success: 0,
+                                            message: 'You have already subscribed paid plan...',
+                                            data: Subscription
+                                        });
+                                    } else {
+                                        let expiry_da = new Date();
+                                        let newPrice = 0;
+                                        if (body.sub_id == 1) {
+                                            expiry_da = expiry_da.setDate(expiry_da.getDate() + 365);
+                                            newPrice = 1499;
+                                        } else {
+                                            expiry_da = expiry_da.setDate(expiry_da.getDate() + 30);
+                                            newPrice = 150;
+                                        }
+                                        UserSubscription.create({
+                                            sub_id: body.sub_id,
+                                            user_id: userData.id,
+                                            type: 1,
+                                            starts_at: date,
+                                            expires_at: expiry_da,
+                                            user_price: newPrice,
+                                            payment_id: 'testing',
+                                            status: 1
+                                        }).then((trial) => {
+                                            return res.json({
+                                                success: 1,
+                                                message: 'Subscription success!',
+                                                data: trial
+                                            });
+                                        }).catch(error => {
+                                            console.log(error);
+                                        });
+                                    }
+                                }
+                            }
+                        }
+                    }).catch(error => {
+                        console.log(error);
+                        return res.json({
+                            success: 0,
+                            message: error
+                        });
+                    });
+                }).catch(error => {
+                    return res.json({
+                        success: 0,
+                        data: error
+                    });
+                });
+            }
+        });
     }
 }
