@@ -9,8 +9,7 @@ const { genSaltSync, hashSync, compareSync } = require('bcrypt');
 const { sign, verify, destroy } = require('jsonwebtoken');
 const jwt_decode = require('jwt-decode');
 const { Op } = require("sequelize");
-const date = require('date-and-time')
-
+const date = require('date-and-time');
 Registration.hasMany(Details);
 Details.belongsTo(Registration);
 
@@ -301,18 +300,126 @@ module.exports = {
             });
         })
     },
+    verifyEmailSend: (req, res) => {
+        const body = req.body;
+        const baseUrl = process.env.BASEURL + process.env.APP_PORT + req.baseUrl;
+        Registration.findOne({where: {email: body.email}}).then(results => {
+            // if (!results) {
+                
+            // }
+            const token = sign({
+                id: results.dataValues.id,
+            }, process.env.JWT_EMAIL_KEY, {
+                expiresIn: '600s',
+            });
+            let values = {
+                is_email_verified : 0,
+                email_verified_token: token,
+            }
+            results.update(values).then(updatedPassword => {
+                // console.log(updatedPassword);
+                if (!updatedPassword) {
+                    return res.json({
+                        success: 0,
+                        message: 'Email verify mail sending failed...!'
+                    });
+                }
+            }).catch(error => {
+                return res.json({
+                    success: 0,
+                    message: error
+                });
+            });
+            // console.log(updatedPassword);
+            const transporter = nodemailer.createTransport({
+                name: 'Zamin',
+                host: process.env.MAIL_HOST,
+                port: process.env.MAIL_PORT,
+                secure: false,
+                requireTLS: true,
+                auth: {
+                    user: process.env.MAIL_USER,
+                    pass: process.env.MAIL_PASS
+                }
+            });
+            const mailOptions = {
+                from: 'Zamin Mirza',
+                to: body.email,
+                subject: 'Email Verification - 01Synergy',
+                html: '<p>You are successfully registered.., kindly use below button to verify your email</p><br><a class="btn btn-info" href="'+baseUrl+'/verify/'+token+'/'+body.email+'">Verify your Email</a>'
+            }
+            transporter.sendMail(mailOptions, (err, info) => {
+                if (err) {
+                    return res.json({
+                        success: 0,
+                        message: 'Mail sending failed!',
+                        error: err
+                    });
+                } else {
+                    return res.json({
+                        success: 1,
+                        message: 'Mail sent',
+                    });
+                }
+            });
+        }).catch(error => {
+            return res.json({
+                success: 0,
+                message: 'Invalid email'
+            });
+        });
+    },
+    verifyEmail: (req, res) => {
+        let token = req.params.token;
+        let email = req.params.email;
+        Registration.findOne({ where: {email_verified_token: token, email: email} }).then(results => {
+            if (results == null) {
+                return res.json({
+                    success: 0,
+                    message: 'Invalid link...!'
+                });
+            } else {
+                verify(token, process.env.JWT_EMAIL_KEY, (err, decoded) => {
+                    if (err) {
+                        res.json({
+                            success: 0,
+                            message: 'Token expired!'
+                        });
+                    } else {
+                        let values = {
+                            is_email_verified : 0,
+                            email_verified_token: '',
+                        }
+                        results.update(values).then(success => {
+                            res.json({
+                                success: 1,
+                                message: 'your email verified successfully!'
+                            });
+                        }).catch(error => {
+                            res.json({
+                                success: 0, 
+                                error: error
+                            });
+                        });
+                    }
+                });
+            }
+        }).catch(error => {
+            return res.json({
+                success: 0,
+                error: error
+            });
+        });
+    },
     resetPassword: (req, res) => {
         const body = req.body;
         const token = body.token;
         const salt = genSaltSync(10);
         body.password = hashSync(body.password, salt);
         Registration.findOne({where: {reset_password_token: token}}).then(results => {
-            if (!results) {
-                return res.json({
-                    success: 0,
-                    message: 'Invalid token'
-                });
-            }
+            // if (!results) {
+                
+            // }
             let values = {
                 password: body.password,
             }
@@ -327,7 +434,12 @@ module.exports = {
                     message: 'Password not reset!'
                 });
             })
-        })
+        }).catch(error => {
+            return res.json({
+                success: 0,
+                message: 'Invalid token'
+            });
+        });
     },
     refreshToken: (req, res) => {
         const refreshToken = req.body.token;
@@ -570,5 +682,22 @@ module.exports = {
                 });
             }
         });
-    }
+    },
+    fileUpload: (req, res, next) => {
+        // const file = req.files.image;
+        // console.log(req.files.fieldname);
+        // file.mv("/uploads" + file.name, function (err, result) {
+        //     if (err) {
+        //         return res.json({
+        //             success: 0,
+        //             message: err
+        //         }); 
+        //     } else {
+        //         return res.json({
+        //             success: 1,
+        //             message: 'file upload success'
+        //         });
+        //     }
+        // })
+    },
 }

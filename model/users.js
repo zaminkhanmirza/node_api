@@ -24,6 +24,12 @@ const sequelize = require('../config/seq_database');
         reset_password_token: {
             type: Sequelize.STRING
         },
+        email_verified_token: {
+            type: Sequelize.STRING
+        },
+        is_email_verified: {
+            type: Sequelize.INTEGER
+        },
         number: {
             type: Sequelize.STRING
         }
